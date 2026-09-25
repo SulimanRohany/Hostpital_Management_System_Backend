@@ -109,23 +109,16 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+SQLITE_DATABASE_PATH = Path(os.getenv('SQLITE_DATABASE_PATH', 'db.sqlite3'))
+if not SQLITE_DATABASE_PATH.is_absolute():
+    SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': SQLITE_DATABASE_PATH,
     }
 }
-
-if os.getenv('POSTGRES_DB'):
-    DATABASES['default'] = {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB'),
-        'USER': os.getenv('POSTGRES_USER'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
-        'CONN_MAX_AGE': 60,
-    }
 
 
 # Password validation
@@ -170,7 +163,6 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # be copied to separate storage. Override this path in production as needed.
 DATABASE_BACKUP_DIR = Path(os.getenv('DATABASE_BACKUP_DIR', BASE_DIR / 'backups'))
 DATABASE_BACKUP_RETENTION_DAYS = int(os.getenv('DATABASE_BACKUP_RETENTION_DAYS', '30'))
-PG_DUMP_PATH = os.getenv('PG_DUMP_PATH', 'pg_dump')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'

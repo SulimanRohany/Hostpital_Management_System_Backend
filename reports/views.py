@@ -1,18 +1,16 @@
 import logging
 import os
-import shutil
-import subprocess
+import sqlite3
 import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
-from django.conf import settings
 from django.db import connection
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import FileResponse
 from django.utils import timezone
-from rest_framework import response, status
+from rest_framework import response
 from rest_framework.views import APIView
 
 from core.models import AuditLog
@@ -296,50 +294,26 @@ class DatabaseBackupAPIView(APIView):
     permission_classes = (IsAdministrator,)
 
     def post(self, request):
-        if connection.vendor != 'postgresql':
-            return response.Response(
-                {'detail': 'Online backup is only available for PostgreSQL.'},
-                status=status.HTTP_501_NOT_IMPLEMENTED,
-            )
-
-        configured_executable = settings.PG_DUMP_PATH
-        executable = shutil.which(configured_executable)
-        if not executable and os.path.isfile(configured_executable):
-            executable = configured_executable
-        if not executable:
-            return response.Response(
-                {'detail': 'The configured PostgreSQL backup tool could not be found.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        config = connection.settings_dict
-        temp = tempfile.NamedTemporaryFile(prefix='health-plus-', suffix='.dump', delete=False)
+        temp = tempfile.NamedTemporaryFile(prefix='health-plus-', suffix='.sqlite3', delete=False)
         temp.close()
-        command = [executable, '--format=custom', '--file', temp.name]
-        if config.get('HOST'):
-            command.extend(['--host', str(config['HOST'])])
-        if config.get('PORT'):
-            command.extend(['--port', str(config['PORT'])])
-        if config.get('USER'):
-            command.extend(['--username', str(config['USER'])])
-        command.append(str(config['NAME']))
-
-        environment = os.environ.copy()
-        if config.get('PASSWORD'):
-            environment['PGPASSWORD'] = str(config['PASSWORD'])
         try:
-            subprocess.run(command, env=environment, check=True, capture_output=True, text=True)
-        except (OSError, subprocess.SubprocessError):
-            logger.exception('PostgreSQL database backup failed')
+            connection.ensure_connection()
+            target = sqlite3.connect(temp.name)
+            try:
+                connection.connection.backup(target)
+            finally:
+                target.close()
+        except (OSError, sqlite3.Error):
+            logger.exception('SQLite database backup failed')
             if os.path.exists(temp.name):
                 os.unlink(temp.name)
             return response.Response(
-                {'detail': 'PostgreSQL backup failed. Check the server logs and database connection settings.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {'detail': 'SQLite backup failed. Check the server logs and database file permissions.'},
+                status=500,
             )
 
         AuditLog.objects.create(actor=request.user, action=AuditLog.Action.BACKUP, object_repr='Database backup')
-        filename = f'health-plus-backup-{timezone.now():%Y%m%d-%H%M%S}.dump'
+        filename = f'health-plus-backup-{timezone.now():%Y%m%d-%H%M%S}.sqlite3'
         file_handle = open(temp.name, 'rb')
         result = FileResponse(file_handle, as_attachment=True, filename=filename, content_type='application/octet-stream')
         result._resource_closers.append(lambda: os.unlink(temp.name) if os.path.exists(temp.name) else None)

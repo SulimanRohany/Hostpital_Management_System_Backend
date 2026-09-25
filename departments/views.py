@@ -88,7 +88,7 @@ class DepartmentViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
         ).order_by('name')
         if getattr(self, 'action', None) == 'partial_update':
             # ``lab_test`` is an optional reverse one-to-one relation, so its
-            # select_related() join is nullable. PostgreSQL cannot combine
+            # The select_related() join is nullable and cannot combine
             # that outer join with FOR UPDATE. The write serializer only
             # needs the non-null department relation while locking the row.
             queryset = queryset.select_related(None).select_related('department').select_for_update()
@@ -180,7 +180,7 @@ class ServiceViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
         ):
             queryset = queryset.filter(department_id=user.department_id) if user.department_id else queryset.none()
         if getattr(self, 'action', None) == 'partial_update':
-            # ``lab_test`` is nullable and cannot be part of a ``FOR UPDATE`` query in PostgreSQL.
+            # ``lab_test`` is nullable and cannot be part of this locking query.
             queryset = queryset.select_related(None).select_related('department').select_for_update()
         else:
             queryset = queryset.select_related('lab_test')

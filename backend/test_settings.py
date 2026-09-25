@@ -1,7 +1,7 @@
 from .settings import *  # noqa: F403
 
 
-# Tests must not depend on the developer's or deployment's PostgreSQL service.
+# Tests use an isolated in-memory database.
 DATABASES = {  # noqa: F405
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

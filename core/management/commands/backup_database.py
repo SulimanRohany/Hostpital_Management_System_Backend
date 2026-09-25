@@ -1,7 +1,5 @@
 import os
-import shutil
 import sqlite3
-import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,17 +25,8 @@ class Command(BaseCommand):
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         connection = connections['default']
-        engine = connection.settings_dict['ENGINE']
         today = timezone.localdate().isoformat()
-
-        if engine == 'django.db.backends.sqlite3':
-            destination = backup_dir / f'database-{today}.sqlite3'
-            backup = self._backup_sqlite
-        elif engine == 'django.db.backends.postgresql':
-            destination = backup_dir / f'database-{today}.dump'
-            backup = self._backup_postgresql
-        else:
-            raise CommandError(f'Backups are not supported for database engine {engine!r}.')
+        destination = backup_dir / f'database-{today}.sqlite3'
 
         if destination.exists() and not options['force']:
             self.stdout.write(self.style.WARNING(f'Backup already exists: {destination}'))
@@ -46,12 +35,12 @@ class Command(BaseCommand):
         temporary = destination.with_name(f'.{destination.name}.tmp')
         try:
             temporary.unlink(missing_ok=True)
-            backup(connection, temporary)
+            self._backup_sqlite(connection, temporary)
             os.replace(temporary, destination)
         except CommandError:
             temporary.unlink(missing_ok=True)
             raise
-        except (OSError, sqlite3.Error, subprocess.SubprocessError) as exc:
+        except (OSError, sqlite3.Error) as exc:
             temporary.unlink(missing_ok=True)
             raise CommandError(f'Database backup failed: {exc}') from exc
 
@@ -68,36 +57,12 @@ class Command(BaseCommand):
         finally:
             target.close()
 
-    @staticmethod
-    def _backup_postgresql(connection, destination):
-        config = connection.settings_dict
-        configured_executable = settings.PG_DUMP_PATH
-        executable = shutil.which(configured_executable)
-        if not executable and Path(configured_executable).is_file():
-            executable = configured_executable
-        if not executable:
-            raise CommandError('The configured PostgreSQL backup tool could not be found.')
-
-        command = [executable, '--format=custom', '--file', str(destination)]
-        if config.get('HOST'):
-            command.extend(['--host', str(config['HOST'])])
-        if config.get('PORT'):
-            command.extend(['--port', str(config['PORT'])])
-        if config.get('USER'):
-            command.extend(['--username', str(config['USER'])])
-        command.append(str(config['NAME']))
-
-        environment = os.environ.copy()
-        if config.get('PASSWORD'):
-            environment['PGPASSWORD'] = str(config['PASSWORD'])
-        subprocess.run(command, env=environment, check=True, capture_output=True, text=True)
-
     def _remove_expired_backups(self, backup_dir):
         retention_days = settings.DATABASE_BACKUP_RETENTION_DAYS
         if retention_days <= 0:
             return
         cutoff = timezone.localdate() - timedelta(days=retention_days)
-        for path in backup_dir.glob('database-*'):
+        for path in backup_dir.glob('database-*.sqlite3'):
             try:
                 backup_date = datetime.strptime(
                     path.name.removeprefix('database-')[:10], '%Y-%m-%d'

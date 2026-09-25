@@ -1,7 +1,7 @@
 # Daily database backups
 
-The backup command supports both SQLite and PostgreSQL and creates files named
-`database-YYYY-MM-DD.sqlite3` or `database-YYYY-MM-DD.dump` in `backups/`.
+The backup command creates consistent SQLite files named
+`database-YYYY-MM-DD.sqlite3` in `backups/`.
 
 Run a backup manually:
 
@@ -32,6 +32,5 @@ Configuration is available in `.env`:
 - `DATABASE_BACKUP_RETENTION_DAYS`: deletes dated backups older than this many
   days after a successful backup. The default is 30; use `0` to keep all files.
 
-PostgreSQL backups require `pg_dump` on the scheduled user's `PATH`. Restore a
-`.dump` backup with `pg_restore`; restore an SQLite backup by replacing the
-database only while the application is stopped.
+Restore a backup by replacing the configured SQLite database file while the
+application is stopped.
