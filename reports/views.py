@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from django.db import connection
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
@@ -21,6 +22,7 @@ from patients.models import Patient
 from pharmacy.models import Medicine, MedicineBatch, Purchase, Sale, SaleLine, Supplier
 from reception.models import Visit
 from .serializers import DateRangeSerializer, StockReportFilterSerializer
+from .database_restore import DatabaseRestoreError, restore_uploaded_database
 
 
 MONEY = DecimalField(max_digits=16, decimal_places=2)
@@ -318,3 +320,45 @@ class DatabaseBackupAPIView(APIView):
         result = FileResponse(file_handle, as_attachment=True, filename=filename, content_type='application/octet-stream')
         result._resource_closers.append(lambda: os.unlink(temp.name) if os.path.exists(temp.name) else None)
         return result
+
+
+class DatabaseRestoreAPIView(APIView):
+    permission_classes = (IsAdministrator,)
+
+    def post(self, request):
+        if request.data.get('confirmation') != 'RESTORE':
+            return response.Response(
+                {'confirmation': ['Enter RESTORE to confirm that all current data will be replaced.']},
+                status=400,
+            )
+        upload = request.FILES.get('backup')
+        if upload is None:
+            return response.Response({'backup': ['Select a database backup file.']}, status=400)
+        if not upload.name.lower().endswith(('.sqlite3', '.sqlite', '.db')):
+            return response.Response({'backup': ['Select a SQLite backup file.']}, status=400)
+
+        actor_id = request.user.pk
+        original_name = Path(upload.name).name
+        try:
+            recovery_path = restore_uploaded_database(upload)
+        except DatabaseRestoreError as exc:
+            logger.warning('Database restore rejected or failed: %s', exc)
+            return response.Response({'backup': [str(exc)]}, status=400)
+
+        # The restored backup may not contain the administrator who initiated
+        # the action, so only retain that relationship when the user still exists.
+        from accounts.models import User
+        restored_actor_id = actor_id if User.objects.filter(pk=actor_id).exists() else None
+        AuditLog.objects.create(
+            actor_id=restored_actor_id,
+            action=AuditLog.Action.RESTORE,
+            object_repr='Database restore',
+            changes={
+                'source_filename': original_name,
+                'recovery_backup': recovery_path.name,
+            },
+        )
+        return response.Response({
+            'detail': 'Database restored successfully. Sign in again to use the restored data.',
+            'recovery_backup': recovery_path.name,
+        })

@@ -12,7 +12,7 @@ from core.mixins import AuditModelViewSetMixin
 from core.permissions import RolePermission
 from .models import Medicine, MedicineBatch, MedicineCategory, Purchase, Sale, StockMovement, Supplier, SupplierPayment
 from .serializers import (
-    MedicineBatchSerializer, MedicineCategorySerializer, MedicineSerializer, PurchaseSerializer,
+    MedicineBatchSerializer, MedicineCategorySerializer, MedicineSerializer, OpeningStockSerializer, PurchaseSerializer,
     SaleSerializer, StockAdjustmentSerializer, StockMovementSerializer, SupplierPaymentSerializer,
     SupplierSerializer, VoidTransactionSerializer,
 )
@@ -345,7 +345,7 @@ class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = (RolePermission,)
     read_roles = PHARMACY_ROLES
     write_roles = ('administrator', 'pharmacy')
-    action_roles = {'adjust': ('administrator',)}
+    action_roles = {'adjust': ('administrator',), 'opening_stock': ('administrator', 'pharmacy')}
     search_fields = ('reference', 'reason', 'batch__batch_number', 'batch__medicine__name')
     ordering_fields = ('created_at', 'quantity_change')
 
@@ -366,6 +366,13 @@ class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
         serializer.is_valid(raise_exception=True)
         movement = serializer.save()
         return response.Response(self.get_serializer(movement).data, status=status.HTTP_201_CREATED)
+
+    @decorators.action(detail=False, methods=('post',), url_path='opening-stock', permission_classes=(RolePermission,))
+    def opening_stock(self, request):
+        serializer = OpeningStockSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        movements = serializer.save()
+        return response.Response(self.get_serializer(movements, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class SupplierPaymentViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):

@@ -115,6 +115,71 @@ class PurchaseLineSerializer(serializers.Serializer):
         return super().to_representation(instance)
 
 
+class OpeningStockLineSerializer(serializers.Serializer):
+    medicine = serializers.PrimaryKeyRelatedField(queryset=Medicine.objects.filter(is_active=True))
+    batch_number = serializers.CharField(max_length=80)
+    expiry_date = serializers.DateField()
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal('0.001'))
+    unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0'))
+    sale_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0'))
+
+    def validate_batch_number(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Batch number cannot be blank.')
+        return value
+
+
+class OpeningStockSerializer(serializers.Serializer):
+    lines = OpeningStockLineSerializer(many=True)
+    reason = serializers.CharField(max_length=220, trim_whitespace=True)
+
+    def validate(self, attrs):
+        lines = attrs.get('lines', [])
+        if not lines:
+            raise serializers.ValidationError({'lines': 'At least one opening stock line is required.'})
+        keys = [(line['medicine'].pk, line['batch_number'].casefold()) for line in lines]
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError({'lines': 'Medicine and batch combinations must be unique.'})
+        conflicts = [
+            line['batch_number'] for line in lines
+            if MedicineBatch.objects.filter(
+                medicine=line['medicine'], batch_number__iexact=line['batch_number'],
+            ).exists()
+        ]
+        if conflicts:
+            raise serializers.ValidationError({'lines': f'Batch already exists for this medicine: {conflicts[0]}.'})
+        if any(line['expiry_date'] <= timezone.localdate() for line in lines):
+            raise serializers.ValidationError({'lines': 'Opening stock expiry dates must be in the future.'})
+        if any(line['sale_price'] < line['unit_cost'] for line in lines):
+            raise serializers.ValidationError({'lines': 'Sale price cannot be below unit cost.'})
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        reason = validated_data['reason']
+        movements = []
+        try:
+            with transaction.atomic():
+                for line in validated_data['lines']:
+                    batch = MedicineBatch.objects.create(
+                        medicine=line['medicine'], supplier=None, batch_number=line['batch_number'],
+                        expiry_date=line['expiry_date'], purchase_price=line['unit_cost'],
+                        sale_price=line['sale_price'], quantity_received=line['quantity'],
+                        quantity_available=Decimal('0'),
+                    )
+                    movements.append(change_stock(
+                        batch=batch, quantity_change=line['quantity'],
+                        movement_type=StockMovement.MovementType.OPENING_STOCK,
+                        reference=f'opening-stock:{batch.pk}', reason=reason, user=user,
+                    ))
+        except IntegrityError as exc:
+            raise serializers.ValidationError({
+                'detail': 'One of these medicine batches already exists.'
+            }) from exc
+        return movements
+
+
 class PurchaseSerializer(ImmutableTransactionMixin, serializers.ModelSerializer):
     lines = PurchaseLineSerializer(many=True)
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)

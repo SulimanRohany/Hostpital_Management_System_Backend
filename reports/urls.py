@@ -1,7 +1,7 @@
 from django.urls import path
 
 from .views import (
-    DashboardAPIView, DatabaseBackupAPIView, FinancialReportAPIView, IncomeTrendAPIView,
+    DashboardAPIView, DatabaseBackupAPIView, DatabaseRestoreAPIView, FinancialReportAPIView, IncomeTrendAPIView,
     LaboratoryReportAPIView, PharmacyReportAPIView, ReceptionReportAPIView, StockReportAPIView,
 )
 
@@ -14,4 +14,5 @@ urlpatterns = [
     path('reports/laboratory/', LaboratoryReportAPIView.as_view(), name='laboratory-report'),
     path('reports/stock/', StockReportAPIView.as_view(), name='stock-report'),
     path('database-backup/', DatabaseBackupAPIView.as_view(), name='database-backup'),
+    path('database-restore/', DatabaseRestoreAPIView.as_view(), name='database-restore'),
 ]

@@ -10,9 +10,10 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from patients.models import Patient
 
+from finance.models import WalletTransaction
 from finance.services import get_system_wallet
 
-from .models import Medicine, MedicineBatch, MedicineCategory, Purchase, PurchaseLine, Sale, Supplier, SupplierPayment
+from .models import Medicine, MedicineBatch, MedicineCategory, Purchase, PurchaseLine, Sale, StockMovement, Supplier, SupplierPayment
 
 
 class PharmacyModelIntegrityTests(TestCase):
@@ -171,6 +172,41 @@ class PharmacyApiHardeningTests(APITestCase):
             }],
         }, format='json')
         self.assertEqual(result.status_code, status.HTTP_400_BAD_REQUEST, result.data)
+
+    def test_opening_stock_creates_inventory_without_supplier_liability_or_wallet_entry(self):
+        self.client.force_authenticate(self.pharmacist)
+        wallet_transactions_before = WalletTransaction.objects.count()
+        result = self.client.post('/api/v1/stock-movements/opening-stock/', {
+            'reason': 'Inventory present when the hospital system was installed',
+            'lines': [{
+                'medicine': str(self.medicine.pk), 'batch_number': 'OPENING-1',
+                'expiry_date': (timezone.localdate() + timedelta(days=180)).isoformat(),
+                'quantity': '25.000', 'unit_cost': '3.00', 'sale_price': '6.00',
+            }],
+        }, format='json')
+
+        self.assertEqual(result.status_code, status.HTTP_201_CREATED, result.data)
+        batch = MedicineBatch.objects.get(batch_number='OPENING-1')
+        self.assertIsNone(batch.supplier)
+        self.assertEqual(batch.quantity_received, Decimal('25.000'))
+        self.assertEqual(batch.quantity_available, Decimal('25.000'))
+        self.assertEqual(result.data[0]['movement_type'], StockMovement.MovementType.OPENING_STOCK)
+        self.assertEqual(self.supplier.amount_due, Decimal('0'))
+        self.assertEqual(Purchase.objects.count(), 0)
+        self.assertEqual(WalletTransaction.objects.count(), wallet_transactions_before)
+
+    def test_opening_stock_rejects_existing_batch_case_insensitively(self):
+        self.client.force_authenticate(self.pharmacist)
+        result = self.client.post('/api/v1/stock-movements/opening-stock/', {
+            'reason': 'Opening inventory',
+            'lines': [{
+                'medicine': str(self.medicine.pk), 'batch_number': 'api-b-1',
+                'expiry_date': (timezone.localdate() + timedelta(days=180)).isoformat(),
+                'quantity': '2.000', 'unit_cost': '2.00', 'sale_price': '5.00',
+            }],
+        }, format='json')
+        self.assertEqual(result.status_code, status.HTTP_400_BAD_REQUEST, result.data)
+        self.assertEqual(MedicineBatch.objects.filter(medicine=self.medicine).count(), 1)
 
     def test_fefo_allocation_uses_earliest_expiry_first(self):
         earlier = MedicineBatch.objects.create(

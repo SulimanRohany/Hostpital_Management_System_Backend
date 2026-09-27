@@ -32,5 +32,18 @@ Configuration is available in `.env`:
 - `DATABASE_BACKUP_RETENTION_DAYS`: deletes dated backups older than this many
   days after a successful backup. The default is 30; use `0` to keep all files.
 
-Restore a backup by replacing the configured SQLite database file while the
-application is stopped.
+## Restore from the administrator screen
+
+Administrators can open **Database backup & restore**, select a downloaded
+`.sqlite3`, `.sqlite`, or `.db` backup, type `RESTORE`, and restore it. The
+server verifies that the file is a healthy Hospital System database with the
+same schema and migrations before changing any data.
+
+Immediately before the restore, the current database is saved in the backup
+directory as `pre-restore-YYYYMMDD-HHMMSS-ffffff.sqlite3`. These recovery
+copies are intentionally not removed by the normal dated-backup retention
+policy. After a successful restore, the administrator is signed out and must
+sign in with credentials contained in the restored backup.
+
+`DATABASE_RESTORE_MAX_BYTES` controls the largest accepted upload in bytes and
+defaults to 1 GiB.

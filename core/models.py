@@ -59,6 +59,7 @@ class AuditLog(UUIDModel):
         LOGOUT = 'logout', 'Logout'
         EXPORT = 'export', 'Export'
         BACKUP = 'backup', 'Backup'
+        RESTORE = 'restore', 'Restore'
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

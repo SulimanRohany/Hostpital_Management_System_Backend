@@ -163,6 +163,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # be copied to separate storage. Override this path in production as needed.
 DATABASE_BACKUP_DIR = Path(os.getenv('DATABASE_BACKUP_DIR', BASE_DIR / 'backups'))
 DATABASE_BACKUP_RETENTION_DAYS = int(os.getenv('DATABASE_BACKUP_RETENTION_DAYS', '30'))
+DATABASE_RESTORE_MAX_BYTES = int(os.getenv('DATABASE_RESTORE_MAX_BYTES', str(1024 * 1024 * 1024)))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'

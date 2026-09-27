@@ -108,7 +108,11 @@ class Medicine(UUIDModel, TimeStampedModel):
 
 class MedicineBatch(UUIDModel, TimeStampedModel):
     medicine = models.ForeignKey(Medicine, on_delete=models.PROTECT, related_name='batches')
-    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='batches')
+    # Opening stock belongs to the hospital before it is entered into this
+    # system, so it intentionally has no supplier or purchase liability.
+    supplier = models.ForeignKey(
+        Supplier, null=True, blank=True, on_delete=models.PROTECT, related_name='batches'
+    )
     batch_number = models.CharField(max_length=80)
     expiry_date = models.DateField(db_index=True)
     purchase_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
@@ -344,6 +348,7 @@ class SaleLine(UUIDModel):
 class StockMovement(UUIDModel):
     class MovementType(models.TextChoices):
         PURCHASE = 'purchase', 'Purchase'
+        OPENING_STOCK = 'opening_stock', 'Opening stock'
         SALE = 'sale', 'Sale'
         ADJUSTMENT_IN = 'adjustment_in', 'Adjustment in'
         ADJUSTMENT_OUT = 'adjustment_out', 'Adjustment out'
